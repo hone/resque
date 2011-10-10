@@ -10,15 +10,15 @@ module Resque
     include Resque::Helpers
     extend Resque::Helpers
 
-    KEEPALIVE_INTERVAL = 25
-    KEEPALIVE_EXPIRE   = 60
+    KEEPALIVE_INTERVAL = (ENV['RESQUE_KEEPALIVE_INTERVAL'] || 25).to_i
+    KEEPALIVE_EXPIRE   = (ENV['RESQUE_KEEPALIVE_EXPIRE']   || 60).to_i
 
     # Whether the worker should log basic info to STDOUT
     attr_accessor :verbose
 
     # Whether the worker should log lots of info to STDOUT
     attr_accessor  :very_verbose
-    
+
     # Whether the worker reverses the TERM and QUIT signals for compatibly reasons
     attr_accessor :reverse_signals
 
@@ -113,26 +113,41 @@ module Resque
     # worker is still alive. It also prunes workers.
     def setup_keepalive_thread
       @keepalive_thread = Thread.new {
+        # stagger keepalive thread to avoid all workers checking
+        # at the same time
+        sleep(KEEPALIVE_INTERVAL * Kernel.rand)
         loop do
-          sleep KEEPALIVE_INTERVAL
           redis.multi do
             redis.set(self, self)
             redis.expire(self, KEEPALIVE_EXPIRE)
           end
           log! "Heartbeat for #{self} | ttl: #{redis.ttl(self)}"
 
-          dont_prune = nil
-          redis.multi do
-            dont_prune = redis.get(:last_prune)
-            unless dont_prune
-              redis.set(:last_prune, Time.now)
-              redis.expire(self, KEEPALIVE_INTERVAL - 5)
-            end
+          if set_last_prune
+            log! "Pruning dead workers"
+            Worker.prune_dead_workers
           end
-          # don't need to do this in a transaction
-          Worker.prune_dead_workers unless dont_prune
+          sleep KEEPALIVE_INTERVAL
         end
       }
+    end
+
+    # Try to be the only worker to set last_prune. Returns true if we were able
+    # to, false otherwise.
+    #
+    # We don't execute the transaction at all if the key exists ahead of time.
+    # If it doesnt exist, we set it only if it still does not exist and expire
+    # it in a transaction, which ensures the expiration is always set.  Success
+    # is determined by whether we were responsible for setting the key.
+    # Multiple workers setting the expiration at roughly the same time is not a
+    # concern.
+    def set_last_prune
+      return false if redis.get(:last_prune)
+      transaction_results = redis.multi do
+        redis.setnx(:last_prune, Time.now.to_i)
+        redis.expire(:last_prune, KEEPALIVE_INTERVAL - 5)
+      end
+      transaction_results.first == 1
     end
 
     # This is the main workhorse method. Called on a Worker instance,
@@ -294,7 +309,7 @@ module Resque
     # USR1: Kill the forked child immediately, continue processing jobs.
     # USR2: Don't process any new jobs
     # CONT: Start processing jobs again after a USR2
-    # 
+    #
     # When `reverse_signals` is set to true the TERM and QUIT signals are swapped
     def register_signal_handlers
       trap(reverse_signals ? 'QUIT' : 'TERM') { shutdown!  }
