@@ -3,8 +3,8 @@ require 'bundler'
 Bundler.setup(:default, :test)
 Bundler.require(:default, :test)
 
-dir = File.dirname(File.expand_path(__FILE__))
-$LOAD_PATH.unshift dir + '/../lib'
+$dir = File.dirname(File.expand_path(__FILE__))
+$LOAD_PATH.unshift $dir + '/../lib'
 $TESTING = true
 require 'test/unit'
 
@@ -42,7 +42,7 @@ at_exit do
   processes = `ps -A -o pid,command | grep [r]edis-test`.split("\n")
   pids = processes.map { |process| process.split(" ")[0] }
   puts "Killing test redis server..."
-  `rm -f #{dir}/dump.rdb #{dir}/dump-cluster.rdb`
+  `rm -f #{$dir}/dump.rdb #{$dir}/dump-cluster.rdb`
   pids.each { |pid| Process.kill("KILL", pid.to_i) }
   exit exit_code
 end
@@ -50,13 +50,13 @@ end
 if ENV.key? 'RESQUE_DISTRIBUTED'
   require 'redis/distributed'
   puts "Starting redis for testing at localhost:9736 and localhost:9737..."
-  `redis-server #{dir}/redis-test.conf`
-  `redis-server #{dir}/redis-test-cluster.conf`
+  `redis-server #{$dir}/redis-test.conf`
+  `redis-server #{$dir}/redis-test-cluster.conf`
   r = Redis::Distributed.new(['redis://localhost:9736', 'redis://localhost:9737'])
   Resque.redis = Redis::Namespace.new :resque, :redis => r
 else
   puts "Starting redis for testing at localhost:9736..."
-  `redis-server #{dir}/redis-test.conf`
+  `redis-server #{$dir}/redis-test.conf`
   Resque.redis = 'localhost:9736'
 end
 
