@@ -186,15 +186,7 @@ module Resque
           run_hook :before_fork, job
           working_on job
 
-          Thread.exclusive do
-            @child = fork
-            unless @child || @cant_fork
-              # kill thread
-              @keepalive_thread.exit if @keepalive_thread
-            end
-          end
-
-          if @child
+          if @child = fork
             srand # Reseeding
             procline "Forked #{@child} at #{Time.now.to_i}"
             Process.wait
