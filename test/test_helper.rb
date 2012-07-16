@@ -1,12 +1,12 @@
 require 'rubygems'
-require 'bundler'
-Bundler.setup(:default, :test)
-Bundler.require(:default, :test)
 
-dir = File.dirname(File.expand_path(__FILE__))
-$LOAD_PATH.unshift dir + '/../lib'
+$dir = File.dirname(File.expand_path(__FILE__))
+$LOAD_PATH.unshift $dir + '/../lib'
 $TESTING = true
 require 'test/unit'
+
+require 'redis/namespace'
+require 'resque'
 
 begin
   require 'leftright'
@@ -42,21 +42,22 @@ at_exit do
   processes = `ps -A -o pid,command | grep [r]edis-test`.split("\n")
   pids = processes.map { |process| process.split(" ")[0] }
   puts "Killing test redis server..."
-  `rm -f #{dir}/dump.rdb #{dir}/dump-cluster.rdb`
-  pids.each { |pid| Process.kill("KILL", pid.to_i) }
+  pids.each { |pid| Process.kill("TERM", pid.to_i) }
+  sleep(0.1)
+  system("rm -f #{$dir}/dump.rdb #{$dir}/dump-cluster.rdb")
   exit exit_code
 end
 
 if ENV.key? 'RESQUE_DISTRIBUTED'
   require 'redis/distributed'
   puts "Starting redis for testing at localhost:9736 and localhost:9737..."
-  `redis-server #{dir}/redis-test.conf`
-  `redis-server #{dir}/redis-test-cluster.conf`
+  `redis-server #{$dir}/redis-test.conf`
+  `redis-server #{$dir}/redis-test-cluster.conf`
   r = Redis::Distributed.new(['redis://localhost:9736', 'redis://localhost:9737'])
   Resque.redis = Redis::Namespace.new :resque, :redis => r
 else
   puts "Starting redis for testing at localhost:9736..."
-  `redis-server #{dir}/redis-test.conf`
+  `redis-server #{$dir}/redis-test.conf`
   Resque.redis = 'localhost:9736'
 end
 
@@ -147,12 +148,14 @@ end
 class Time
   # Thanks, Timecop
   class << self
+    attr_accessor :fake_time
+
     alias_method :now_without_mock_time, :now
 
-    def now_with_mock_time
-      $fake_time || now_without_mock_time
+    def now
+      fake_time || now_without_mock_time
     end
-
-    alias_method :now, :now_with_mock_time
   end
+
+  self.fake_time = nil
 end

@@ -1,3 +1,35 @@
+## 1.21.0 (2012-07-02)
+
+* Add a flag to make sure failure hooks are only ran once (jakemack, #546)
+* Support updated MultiJSON API (@twinturbo)
+* Fix worker logging in monit example config (@twinturbo)
+* loosen dependency of redis-namespace to 1.x, support for redis-rb 3.0.x
+* change '%' to '$' in the 'stop program' command for monit
+* UTF8 sanitize exception messages when there's a failure (@brianmario, #507)
+* don't share a redis connection between parent and child (@jsanders, #588)
+
+## 1.20.0 (2012-02-17)
+
+* Fixed demos for ruby 1.9 (@BMorearty, #445)
+* Fixed `#requeue` tests (@hone, #500)
+* Web UI: optional trailing slashes of URLs (@elisehuard, #449)
+* Allow * to appear anywhere in queue list (@tapajos, #405, #407)
+* Wait for child with specific PID (@jacobkg)
+* #decode raise takes a string when re-raising as a different exception class (Trevor Hart)
+* Use Sinatra's `pubilc_folder` if it exists (@defunkt, #420, #421)
+* Assign the job's worker before calling `before_fork` (@quirkey)
+* Fix Resque::Helpers#constantize to work correctly on 1.9.2 (@rtlong)
+* Added before & after hooks for dequeue (@humancopy, #398)
+* daemonize support using `ENV["BACKGROUND"]` (@chrisleishman)
+* requeue and remove failed jobs by queue name (@evanwhalen)
+* `-r` flag for resque-web for redis connection (@gjastrab)
+* Added `Resque.enqueue_to`: allows you to specif the queue and still run hooks (@dan-g)
+* Web UI: Set the default encoding to UTF-8 (@elubow)
+* fix finding worker pids on JRuby (John Andrews + Andrew Grieser)
+* Added distributed redis support (@stipple)
+* Added better failure hooks (@raykrueger)
+* Added before & after dequeue hooks (@humancopy)
+
 ## 1.19.0 (2011-09-01)
 
 * Added Airbrake (formerly Hoptoad) support.
