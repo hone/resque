@@ -183,13 +183,14 @@ module Resque
 
         if not paused? and job = reserve
           log "got: #{job.inspect}"
+          job.worker = self
           run_hook :before_fork, job
           working_on job
 
           if @child = fork
             srand # Reseeding
             procline "Forked #{@child} at #{Time.now.to_i}"
-            Process.wait
+            Process.wait(@child)
           else
             procline "Processing #{job.queue} since #{Time.now.to_i}"
             perform(job, &block)
@@ -215,6 +216,7 @@ module Resque
     def process(job = nil, &block)
       return unless job ||= reserve
 
+      job.worker = self
       working_on job
       perform(job, &block)
     ensure
@@ -263,7 +265,7 @@ module Resque
     # A splat ("*") means you want every queue (in alpha order) - this
     # can be useful for dynamically adding new queues.
     def queues
-      @queues[0] == "*" ? Resque.queues.sort : @queues
+      @queues.map {|queue| queue == "*" ? Resque.queues.sort : queue }.flatten.uniq
     end
 
     # Not every platform supports fork. Here we do our magic to
@@ -426,17 +428,22 @@ module Resque
 
     # Unregisters ourself as a worker. Useful when shutting down.
     def unregister_worker
-      # If we're still processing a job, make sure it gets logged as a
-      # failure.
-      if (hash = processing) && !hash.empty?
-        job = Job.new(hash['queue'], hash['payload'])
-        # Ensure the proper worker is attached to this job, even if
-        # it's not the precise instance that died.
-        job.worker = self
-        job.fail(DirtyExit.new)
+
+      # Multiple workers on a single machine can fail a job, causing
+      # duplicate retries when using retry plugin. Here we're effectively
+      # synchronizing on the srem call to prevent that.
+      if redis.srem(:workers, self)
+        # If we're still processing a job, make sure it gets logged as a
+        # failure.
+        if (hash = processing) && !hash.empty?
+          job = Job.new(hash['queue'], hash['payload'])
+          # Ensure the proper worker is attached to this job, even if
+          # it's not the precise instance that died.
+          job.worker = self
+          job.fail(DirtyExit.new)
+        end
       end
 
-      redis.srem(:workers, self)
       redis.del("worker:#{self}")
       redis.del("worker:#{self}:started")
 
@@ -449,7 +456,6 @@ module Resque
     # Given a job, tells Redis we're working on it. Useful for seeing
     # what workers are doing and when.
     def working_on(job)
-      job.worker = self
       data = encode \
         :queue   => job.queue,
         :run_at  => Time.now.strftime("%Y/%m/%d %H:%M:%S %Z"),

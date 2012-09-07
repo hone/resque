@@ -9,6 +9,7 @@ context "Resque::Worker" do
     Resque.after_fork = nil
 
     @worker = Resque::Worker.new(:jobs)
+    @worker.register_worker
     Resque::Job.create(:jobs, SomeJob, 20, '/tmp')
   end
 
@@ -113,6 +114,36 @@ context "Resque::Worker" do
     assert_equal 0, Resque.size(:high)
     assert_equal 0, Resque.size(:critical)
     assert_equal 0, Resque.size(:blahblah)
+  end
+
+  test "can work with wildcard at the end of the list" do
+    Resque::Job.create(:high, GoodJob)
+    Resque::Job.create(:critical, GoodJob)
+    Resque::Job.create(:blahblah, GoodJob)
+    Resque::Job.create(:beer, GoodJob)
+
+    worker = Resque::Worker.new(:critical, :high, "*")
+
+    worker.work(0)
+    assert_equal 0, Resque.size(:high)
+    assert_equal 0, Resque.size(:critical)
+    assert_equal 0, Resque.size(:blahblah)
+    assert_equal 0, Resque.size(:beer)
+  end
+
+  test "can work with wildcard at the middle of the list" do
+    Resque::Job.create(:high, GoodJob)
+    Resque::Job.create(:critical, GoodJob)
+    Resque::Job.create(:blahblah, GoodJob)
+    Resque::Job.create(:beer, GoodJob)
+
+    worker = Resque::Worker.new(:critical, "*", :high)
+
+    worker.work(0)
+    assert_equal 0, Resque.size(:high)
+    assert_equal 0, Resque.size(:critical)
+    assert_equal 0, Resque.size(:blahblah)
+    assert_equal 0, Resque.size(:beer)
   end
 
   test "processes * queues in alphabetical order" do
@@ -277,7 +308,8 @@ context "Resque::Worker" do
     workerB.instance_variable_set(:@to_s, "#{`hostname`.chomp}:2:high,low")
     workerB.register_worker
 
-    assert_equal 2, Resque.workers.size
+    # should be 3 counting @worker
+    assert_equal 3, Resque.workers.size
 
     # simulate dead workers
     Resque.redis.del(workerA, workerB)
