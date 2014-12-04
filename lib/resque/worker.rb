@@ -194,6 +194,7 @@ module Resque
             Process.wait(@child)
           else
             procline "Processing #{job.queue} since #{Time.now.to_i}"
+            redis.client.reconnect   # New connection for the child
             perform(job, &block)
             exit! unless @cant_fork
           end
