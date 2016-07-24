@@ -279,10 +279,61 @@ context "Resque::Worker" do
 
     assert_equal 2, Resque.workers.size
 
+    # simulate dead workers
+    Resque.redis.del(workerA, workerB)
+
     # then we prune them
     @worker.work(0) do
       assert_equal 1, Resque.workers.size
     end
+  end
+
+  test "worker registers keepalive key on startup" do
+    worker = Resque::Worker.new(:jobs)
+    worker.instance_variable_set(:@to_s, "#{`hostname`.chomp}:1:jobs")
+    worker.startup
+
+    assert_not_equal -1, Resque.redis.ttl(worker.to_s)
+    assert Resque.redis.get(worker.to_s)
+    worker.unregister_worker
+  end
+
+  test "worker has a heartbeat" do
+    worker = Resque::Worker.new(:jobs)
+    worker.instance_variable_set(:@to_s, "#{`hostname`.chomp}:1:jobs")
+    worker.instance_variable_set(:@keepalive_interval, 0.01)
+    worker.instance_variable_set(:@keepalive_expire, 1) # must be an integer
+    worker.startup
+    Resque.redis.del(worker.to_s)
+    sleep(0.05)
+
+    assert_not_equal -1, Resque.redis.ttl(worker.to_s)
+    assert Resque.redis.get(worker.to_s)
+    worker.unregister_worker
+  end
+
+  test "worker cleans up dead worker info after startup" do
+    workers = [Resque::Worker.new(:jobs), Resque::Worker.new(:jobs)]
+    workers.each_with_index do |worker, index|
+      worker.instance_variable_set(:@to_s, "#{`hostname`.chomp}:#{index}:jobs")
+      worker.instance_variable_set(:@keepalive_interval, 0.01)
+      worker.instance_variable_set(:@keepalive_expire, 1) # must be an integer
+      worker.startup
+    end
+
+    # simulate dead worker
+    Resque.redis.del(workers.first)
+    workers.first.instance_variable_get(:@keepalive_thread).exit
+
+    sleep(0.05)
+    # make sure set_last_prune is run
+    assert_not_equal -1, Resque.redis.ttl(:last_prune)
+    # simulate last_prune expire
+    Resque.redis.del(:last_prune)
+    sleep(0.05)
+
+    assert_not_equal -1, Resque.redis.ttl(:last_prune)
+    assert_equal 1, Resque.workers.size
   end
 
   test "worker_pids returns pids" do
